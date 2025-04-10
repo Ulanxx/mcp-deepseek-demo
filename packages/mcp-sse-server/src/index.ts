@@ -130,7 +130,7 @@ process.on("SIGINT", async () => {
 const port = process.env.PORT || 8083;
 const server = app.listen(port, () => {
   console.log(
-    `[${new Date().toISOString()}] 智能商城 MCP SSE 服务器已启动，地址: http://localhost:${port}`
+    `[${new Date().toISOString()}] MCP SSE 服务器已启动，地址: http://localhost:${port}`
   );
   console.log(`- SSE 连接端点: http://localhost:${port}/sse`);
   console.log(`- 消息处理端点: http://localhost:${port}/messages`);

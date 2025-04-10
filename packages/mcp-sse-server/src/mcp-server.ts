@@ -11,7 +11,7 @@ import { getFiles } from "./files";
 export const server = new McpServer({
   name: "mcp-sse-demo",
   version: "1.0.0",
-  description: "提供商品查询、库存管理和订单处理的MCP工具",
+  description: "MCP工具",
 });
 
 // 获取产品列表工具

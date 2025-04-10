@@ -49,13 +49,28 @@ pnpm install
 
 3. 配置环境变量
 
-在项目根目录创建 `.env` 文件，并添加以下配置：
+在 mcp-client 目录下创建 `.env` 文件，并添加以下配置：
 
 ```
-NEXT_PUBLIC_MCP_SERVER_URL=http://localhost:8083/sse
-NEXT_PUBLIC_DEEPSEEK_API_KEY=your_deepseek_api_key
-NEXT_PUBLIC_DEEPSEEK_API_URL=https://api.deepseek.com/v1/chat/completions
+# MCP服务器配置
+MCP_SERVER_URL=http://localhost:8083/sse
+
+# AI提供商配置
+DEEPSEEK_API_KEY=sk-...
+DEEPSEEK_API_URL=https://api.deepseek.com/v1/chat/completions
+
+# 默认使用的AI模型
 DEFAULT_MODEL=deepseek-chat
+```
+
+在 mcp-sse-server 目录下创建 `.env` 文件，并添加以下配置：
+
+```
+# 服务器配置
+PORT=8083
+ALLOWED_ORIGINS=http://localhost:3000,https://yourdomain.com
+LOG_LEVEL=info
+HEARTBEAT_INTERVAL=30000
 ```
 
 ### 启动服务
