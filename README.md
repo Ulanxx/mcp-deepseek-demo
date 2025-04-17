@@ -149,4 +149,4 @@ mcp-deepseek-demo/
 
 ## 许可证
 
-MIT
+[MIT LICENSE](./LICENSE)
