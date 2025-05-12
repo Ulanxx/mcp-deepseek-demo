@@ -2,6 +2,9 @@
 @tailwind components;
 @tailwind utilities;
 
+/* 导入 Markdown 样式 */
+@import './markdown-styles.css';
+
 :root {
   --foreground-rgb: 0, 0, 0;
   --background-start-rgb: 246, 248, 250;
@@ -65,7 +68,7 @@ body {
   }
   
   .message-bubble {
-    @apply rounded-2xl p-4 max-w-[85%] shadow-sm;
+    @apply rounded-2xl px-4 py-3 max-w-[85%] shadow-sm;
   }
   
   .message-user {

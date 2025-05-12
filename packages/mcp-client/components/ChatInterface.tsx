@@ -1,5 +1,11 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import type { Message, Tool } from '@/lib/utils';
+import ReactMarkdown from 'react-markdown';
+import rehypeHighlight from 'rehype-highlight';
+import remarkGfm from 'remark-gfm';
+
+// 导入本地存储工具
+import { saveMessages, loadMessages } from '../lib/storage';
 
 // API 请求响应类型定义
 interface ApiResponse {
@@ -24,6 +30,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
   onToolsLoaded
 }) => {
   const [messages, setMessages] = useState<Message[]>([]);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
   const [inputValue, setInputValue] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -34,6 +41,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
   useEffect(() => {
     // 从 API 获取工具的函数
     const fetchTools = async (): Promise<void> => {
+      setIsLoading(true);
       try {
         // 从 API 获取工具
         const response = await fetch('/api/tools');
@@ -48,10 +56,13 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
         
         onToolsLoaded(data.tools || []);
         onConnectionChange(true);
+        setError(null);
       } catch (error: any) {
         console.error('获取工具失败:', error);
         setError(`连接错误: ${error.message}`);
         onConnectionChange(false);
+      } finally {
+        setIsLoading(false);
       }
     };
     
@@ -101,11 +112,28 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
     };
   }, [onConnectionChange, onToolsLoaded]);
   
-  // 消息变化时滚动到底部
+  // 加载保存的消息
+  useEffect(() => {
+    const savedMessages = loadMessages();
+    if (savedMessages && savedMessages.length > 0) {
+      setMessages(savedMessages);
+    }
+  }, []);
+
+  // 消息变化时滚动到底部并保存消息
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (messages.length > 0) {
+      saveMessages(messages);
+    }
   }, [messages]);
   
+  // 清除所有消息
+  const handleClearMessages = useCallback(() => {
+    setMessages([]);
+    saveMessages([]);
+  }, []);
+
   // 处理发送消息
   const handleSendMessage = async () => {
     if (!inputValue.trim() || isProcessing || !isConnected) return;
@@ -185,10 +213,28 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
   
   return (
     <div className="card h-[600px] flex flex-col">
-      <div className="card-header">
-        <h2 className="text-xl font-semibold">聊天</h2>
-        {isConnected && (
-          <span className="badge badge-success">已连接</span>
+      <div className="card-header flex justify-between items-center">
+        <div className="flex items-center">
+          <h2 className="text-xl font-semibold mr-2">聊天</h2>
+          {isConnected && (
+            <span className="badge badge-success">已连接</span>
+          )}
+          {isLoading && (
+            <span className="ml-2 inline-block">
+              <svg className="animate-spin h-4 w-4 text-blue-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+            </span>
+          )}
+        </div>
+        {messages.length > 0 && (
+          <button 
+            onClick={handleClearMessages}
+            className="text-xs px-2 py-1 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded transition-colors"
+          >
+            清除对话
+          </button>
         )}
       </div>
       
@@ -223,7 +269,57 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
                 {message.role === 'system' && (
                   <div className="text-xs text-gray-500 mb-1 font-medium">系统消息</div>
                 )}
+                {message.role === 'assistant' ? (
+                <div className="markdown-content">
+                  <ReactMarkdown 
+                    remarkPlugins={[remarkGfm]}
+                    rehypePlugins={[rehypeHighlight]}
+                    components={{
+                      // 自定义代码块渲染
+                      code({ inline, className, children, ...props }: any) {
+                        const match = /language-(\w+)/.exec(className || '');
+                        return !inline && match ? (
+                          <div className="code-block-wrapper">
+                            <div className="code-block-header">
+                              <span className="code-language">{match[1]}</span>
+                              <button 
+                                onClick={() => navigator.clipboard.writeText(String(children).replace(/\n$/, ''))} 
+                                className="copy-button"
+                                title="复制代码"
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
+                                </svg>
+                              </button>
+                            </div>
+                            <pre className={className}>
+                              <code className={className} {...props}>{children}</code>
+                            </pre>
+                          </div>
+                        ) : (
+                          <code className={className} {...props}>{children}</code>
+                        );
+                      },
+                      // 自定义表格渲染
+                      table({ ...props }: any) {
+                        return (
+                          <div className="table-container">
+                            <table className="markdown-table" {...props} />
+                          </div>
+                        );
+                      },
+                      // 自定义链接渲染
+                      a({ ...props }: any) {
+                        return <a target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline" {...props} />;
+                      }
+                    }}
+                  >
+                    {message.content}
+                  </ReactMarkdown>
+                </div>
+              ) : (
                 <div className="whitespace-pre-wrap">{message.content}</div>
+              )}
               </div>
               {message.role === 'user' && (
                 <div className="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center ml-2 flex-shrink-0">
@@ -244,6 +340,14 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
               {error}
+              <button 
+                onClick={() => setError(null)} 
+                className="ml-auto text-red-500 hover:text-red-700"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
             </div>
           </div>
         )}
