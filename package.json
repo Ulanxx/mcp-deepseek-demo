@@ -12,11 +12,19 @@
     "format": "prettier --write \"**/*.{ts,tsx,md}\""
   },
   "devDependencies": {
-    "turbo": "^1.10.0",
-    "prettier": "^3.0.0"
+    "@types/marked": "^6.0.0",
+    "@types/uuid": "^10.0.0",
+    "prettier": "^3.0.0",
+    "turbo": "^1.10.0"
   },
   "engines": {
     "node": ">=18.0.0"
   },
-  "packageManager": "pnpm@10.8.0"
+  "packageManager": "pnpm@10.8.0",
+  "dependencies": {
+    "browser-image-compression": "^2.0.2",
+    "marked": "^15.0.11",
+    "pdf-lib": "^1.17.1",
+    "uuid": "^11.1.0"
+  }
 }

@@ -7,6 +7,8 @@ import {
   Tool,
   DeepSeekTool,
 } from "./utils";
+import { McpResponse } from "./types";
+import { truncateMessageHistory } from "./token-counter";
 
 // 缓存过期时间（毫秒）
 const CACHE_EXPIRY = 5 * 60 * 1000; // 5分钟
@@ -319,8 +321,14 @@ export async function sendMessage(message: string, history: any[] = []) {
     }
 
     // 构建消息历史
-    const messages = [...history, { role: "user", content: message }];
-    console.log(`准备发送到AI的消息总数: ${messages.length}`);
+    let allMessages = [...history, { role: "user", content: message }];
+    console.log(`原始消息总数: ${allMessages.length}`);
+    
+    // 裁剪消息历史以适应token限制 (DeepSeek的最大token数为65536)
+    const MAX_TOKENS = 65536;
+    const RESERVED_TOKENS = 1500; // 为回复和模型开销预留的token数
+    allMessages = truncateMessageHistory(allMessages, MAX_TOKENS, RESERVED_TOKENS);
+    console.log(`裁剪后消息数量: ${allMessages.length}`);
 
     // 调用AI
     console.log(`开始调用AI模型: ${config.ai.defaultModel}`);
@@ -339,7 +347,7 @@ export async function sendMessage(message: string, history: any[] = []) {
 
     const response = await aiClient.messages.create({
       model: config.ai.defaultModel,
-      messages,
+      messages: allMessages,
       tools: deepseekToolsFormatted,
       max_tokens: 1000,
     });
@@ -390,15 +398,22 @@ export async function sendMessage(message: string, history: any[] = []) {
 
       // 将工具结果发送回AI获取最终回复
       console.log("开始获取AI最终回复");
+      // 为工具调用结果创建新的消息历史
+      let finalMessages = [
+        ...allMessages,
+        {
+          role: "user",
+          content: JSON.stringify(toolResults),
+        },
+      ];
+      
+      // 再次裁剪消息历史以适应token限制
+      finalMessages = truncateMessageHistory(finalMessages, MAX_TOKENS, RESERVED_TOKENS);
+      console.log(`工具调用后裁剪的消息数量: ${finalMessages.length}`);
+      
       const finalResponse = await aiClient.messages.create({
         model: config.ai.defaultModel,
-        messages: [
-          ...messages,
-          {
-            role: "user",
-            content: JSON.stringify(toolResults),
-          },
-        ],
+        messages: finalMessages,
         max_tokens: 1000,
       });
       console.log("获取AI最终回复成功");

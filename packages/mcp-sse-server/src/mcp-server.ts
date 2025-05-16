@@ -7,6 +7,12 @@ import {
   createPurchase,
 } from "./services/inventory-service";
 import { getFiles } from "./files";
+import {
+  generateMarkdownSummary,
+  generatePdfSummary,
+  getFileAsBase64,
+  deleteFile
+} from "./services/document-service";
 
 export const server = new McpServer({
   name: "mcp-sse-demo",
@@ -121,6 +127,61 @@ server.tool(
           {
             type: "text",
             text: JSON.stringify({ error: error.message }),
+          },
+        ],
+      };
+    }
+  }
+);
+
+// 文档总结生成工具
+server.tool(
+  "generateDocumentSummary",
+  "根据传入文档内容，生成总结性 MD 或 PDF 文件，可选择文件类型一键下载",
+  {
+    content: z.string().describe("需要总结的文档内容"),
+    title: z.string().optional().describe("总结标题（可选），默认为'文档总结'"),
+    format: z.enum(["md", "pdf"]).describe("选择输出格式：md 为 Markdown 格式，pdf 为 PDF 格式"),
+  },
+  async ({ content, title = "文档总结", format }) => {
+    console.log("生成文档总结", { title, format });
+    try {
+      let result;
+      
+      if (format === "md") {
+        result = await generateMarkdownSummary(content, title);
+      } else {
+        result = await generatePdfSummary(content, title);
+      }
+      
+      // 获取文件的 Base64 编码
+      const fileBase64 = getFileAsBase64(result.filePath);
+      
+      // 构建下载数据
+      const downloadData = {
+        fileName: result.fileName,
+        fileType: format === "md" ? "text/markdown" : "application/pdf",
+        data: fileBase64,
+      };
+      
+      // 删除临时文件
+      deleteFile(result.filePath);
+      
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(downloadData),
+          },
+        ],
+      };
+    } catch (error: any) {
+      console.error("生成文档总结失败:", error);
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify({ error: error.message || "生成文档总结失败" }),
           },
         ],
       };

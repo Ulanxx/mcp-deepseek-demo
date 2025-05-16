@@ -3,6 +3,7 @@ import type { Message, Tool } from '@/lib/utils';
 import ReactMarkdown from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
 import remarkGfm from 'remark-gfm';
+import imageCompression from 'browser-image-compression';
 
 // 导入本地存储工具
 import { saveMessages, loadMessages } from '../lib/storage';
@@ -16,6 +17,14 @@ interface ApiResponse {
     result?: any;
     error?: string;
   }[];
+}
+
+interface CompressedImageInfo {
+  fileName: string;
+  originalSize: number;
+  compressedSize: number;
+  compressionRatio: string;
+  dataUrl: string;
 }
 
 interface ChatInterfaceProps {
@@ -33,7 +42,10 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [inputValue, setInputValue] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isCompressing, setIsCompressing] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
+  const [compressedImages, setCompressedImages] = useState<Record<string, CompressedImageInfo>>({});
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   
@@ -135,8 +147,142 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
   }, []);
 
   // 处理发送消息
+  const handleDownloadImage = (imageId: string) => {
+    const imageInfo = compressedImages[imageId];
+    if (!imageInfo) return;
+
+    const link = document.createElement('a');
+    link.href = imageInfo.dataUrl;
+    
+    // 提取文件扩展名并创建新的文件名
+    const originalName = imageInfo.fileName;
+    const lastDotIndex = originalName.lastIndexOf('.');
+    const nameWithoutExt = originalName.substring(0, lastDotIndex);
+    const extension = originalName.substring(lastDotIndex);
+    
+    link.download = `${nameWithoutExt}-compressed${extension}`;
+    link.click();
+  };
+
+  // 自定义Markdown组件，处理压缩图片显示
+  const CompressedImageComponent = ({ imageId }: { imageId: string }) => {
+    const imageInfo = compressedImages[imageId];
+    if (!imageInfo) return null;
+    
+    return (
+      <div className="mt-2 border rounded-lg overflow-hidden bg-gray-50 p-3">
+        <div className="flex flex-col">
+          <div className="relative mx-auto max-w-full" style={{ maxWidth: '300px', maxHeight: '300px' }}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img 
+              src={imageInfo.dataUrl} 
+              alt="压缩后图片"
+              className="max-w-full max-h-[300px] mx-auto object-contain rounded"
+            />
+          </div>
+          <div className="mt-3 flex justify-center">
+            <button
+              onClick={() => handleDownloadImage(imageId)}
+              className="flex items-center px-3 py-1 text-sm bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+              下载压缩图片
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const compressImage = async (file: File) => {
+    try {
+      setIsCompressing(true);
+      
+      console.log('原始图片大小:', file.size / 1024 / 1024, 'MB');
+      
+      const options = {
+        maxSizeMB: 1,
+        maxWidthOrHeight: 1024,
+        useWebWorker: true
+      };
+      
+      const compressedFile = await imageCompression(file, options);
+      console.log('压缩后图片大小:', compressedFile.size / 1024 / 1024, 'MB');
+      
+      // 计算压缩比例
+      const originalSize = file.size;
+      const compressedSize = compressedFile.size;
+      const compressionRatio = ((1 - compressedSize / originalSize) * 100).toFixed(2);
+      
+      // 创建预览URL
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        if (e.target && e.target.result) {
+          const dataUrl = e.target.result as string;
+          const imageId = `img_${Date.now()}`;
+          
+          // 保存压缩图片信息
+          const imageInfo: CompressedImageInfo = {
+            fileName: file.name,
+            originalSize,
+            compressedSize,
+            compressionRatio,
+            dataUrl
+          };
+          
+          setCompressedImages(prev => ({
+            ...prev,
+            [imageId]: imageInfo
+          }));
+          
+          // 添加用户上传消息
+          setMessages(prev => [...prev, { 
+            role: 'user', 
+            content: `我上传了一张图片进行压缩: ${file.name}` 
+          }]);
+          
+          // 添加系统压缩结果消息
+          setMessages(prev => [...prev, { 
+            role: 'system', 
+            content: `图片压缩完成:\n- 文件名: ${file.name}\n- 原始大小: ${(originalSize / 1024 / 1024).toFixed(2)} MB\n- 压缩后大小: ${(compressedSize / 1024 / 1024).toFixed(2)} MB\n- 压缩比例: ${compressionRatio}%\n\n{compressed-image:${imageId}}` 
+          }]);
+        }
+      };
+      reader.readAsDataURL(compressedFile);
+      
+    } catch (error) {
+      console.error('压缩图片时出错:', error);
+      setMessages(prev => [...prev, { 
+        role: 'system', 
+        content: `图片压缩错误: ${error instanceof Error ? error.message : '未知错误'}` 
+      }]);
+    } finally {
+      setIsCompressing(false);
+    }
+  };
+  
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    // 检查是否为图片文件
+    if (!file.type.startsWith('image/')) {
+      setError('请上传图片文件');
+      return;
+    }
+    
+    await compressImage(file);
+    
+    // 清除文件输入，以便同一文件可以再次选择
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+  
   const handleSendMessage = async () => {
-    if (!inputValue.trim() || isProcessing || !isConnected) return;
+    if ((!inputValue.trim() && !isCompressing) || isProcessing || !isConnected) return;
     
     const userMessage = inputValue.trim();
     setInputValue('');
@@ -269,12 +415,21 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
                 {message.role === 'system' && (
                   <div className="text-xs text-gray-500 mb-1 font-medium">系统消息</div>
                 )}
-                {message.role === 'assistant' ? (
+                {message.role === 'assistant' || message.role === 'system' ? (
                 <div className="markdown-content">
                   <ReactMarkdown 
                     remarkPlugins={[remarkGfm]}
                     rehypePlugins={[rehypeHighlight]}
                     components={{
+                      p: ({ node, ...props }) => {
+                        const content = props.children?.toString() || '';
+                        // 检查自定义标签 {compressed-image:id}
+                        const match = content.match(/\{compressed-image:([^}]+)\}/);
+                        if (match && match[1]) {
+                          return <CompressedImageComponent imageId={match[1]} />;
+                        }
+                        return <p {...props} />;
+                      },
                       // 自定义代码块渲染
                       code({ inline, className, children, ...props }: any) {
                         const match = /language-(\w+)/.exec(className || '');
@@ -358,28 +513,61 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
             onChange={(e) => setInputValue(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
             placeholder={isConnected ? "输入您的消息..." : "请先连接到服务器..."}
-            disabled={!isConnected || isProcessing}
+            disabled={!isConnected || isProcessing || isCompressing}
             className="input flex-1"
           />
-          <button
-            onClick={handleSendMessage}
-            disabled={!isConnected || isProcessing || !inputValue.trim()}
-            className={`ml-3 btn ${
-              isConnected && inputValue.trim() && !isProcessing
-                ? 'btn-primary'
-                : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-            }`}
-          >
-            {isProcessing ? (
-              <>
-                <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+          
+          <div className="flex ml-2">
+            <input 
+              type="file"
+              className="hidden"
+              accept="image/*"
+              ref={fileInputRef}
+              onChange={handleFileChange}
+              disabled={!isConnected || isCompressing}
+            />
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={!isConnected || isCompressing}
+              title="上传图片进行压缩"
+              className={`mr-2 p-2 rounded-md ${
+                isConnected && !isCompressing
+                  ? 'bg-blue-100 text-blue-600 hover:bg-blue-200'
+                  : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+              }`}
+            >
+              {isCompressing ? (
+                <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                 </svg>
-                处理中
-              </>
-            ) : '发送'}
-          </button>
+              ) : (
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+              )}
+            </button>
+            
+            <button
+              onClick={handleSendMessage}
+              disabled={!isConnected || isProcessing || (!inputValue.trim() && !isCompressing)}
+              className={`px-4 py-2 rounded-md ${
+                isConnected && (inputValue.trim() || isCompressing) && !isProcessing
+                  ? 'bg-blue-600 text-white hover:bg-blue-700'
+                  : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+              }`}
+            >
+              {isProcessing ? (
+                <>
+                  <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  处理中
+                </>
+              ) : '发送'}
+            </button>
+          </div>
         </div>
       </div>
     </div>
