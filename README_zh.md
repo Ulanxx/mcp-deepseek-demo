@@ -1,16 +1,18 @@
 # MCP DeepSeek 演示项目
 
-[English](.README.md)
-
-## Certification  
-This project is certified by [MCP Review](https://mcpreview.com).  
-
 <p align="center">
   <img src="https://img.shields.io/badge/状态-开发中-blue" alt="状态开发中">
   <img src="https://img.shields.io/badge/版本-0.1.0-green" alt="版本0.1.0">
   <img src="https://img.shields.io/badge/语言-TypeScript-blue" alt="语言TypeScript">
   <img src="https://img.shields.io/badge/框架-Next.js-black" alt="框架Next.js">
 </p>
+
+[English](.README.md)
+
+## Certification  
+
+[![MCP Review Certified](https://img.shields.io/badge/MCP_Review-Certified-green)](https://mcpreview.com)  
+
 
 ## 项目概述
 
